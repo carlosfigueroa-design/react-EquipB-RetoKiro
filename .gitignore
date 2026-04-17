@@ -1,3 +1,36 @@
-.env
-.kiro/settings/mcp.json
+# Dependencies
 node_modules/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# MCP config (contains tokens)
+.kiro/settings/mcp.json
+
+# Auth tokens — NEVER commit
+vinculo-frontend/.npmrc
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes
+pgdata/
+
+# Other projects in workspace
+squad-agentes-ia/

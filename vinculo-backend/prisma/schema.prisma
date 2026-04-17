@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AliadoType {
+  INTERMEDIARIO
+  FINTECH
+  BANCO
+  ECOMMERCE
+  DESARROLLADOR
+}
+
+enum AliadoStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum AppStatus {
+  ACTIVE
+  REVOKED
+}
+
+model Aliado {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  passwordHash  String
+  companyName   String
+  nit           String       @unique
+  type          AliadoType
+  status        AliadoStatus @default(PENDING)
+  contactName   String
+  contactPhone  String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  apps          App[]
+  apiCalls      ApiCall[]
+}
+
+model App {
+  id           String    @id @default(uuid())
+  name         String
+  clientId     String    @unique @default(uuid())
+  clientSecret String
+  status       AppStatus @default(ACTIVE)
+  aliadoId     String
+  aliado       Aliado    @relation(fields: [aliadoId], references: [id])
+  sandbox      Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  apiCalls     ApiCall[]
+}
+
+model ApiCall {
+  id         String   @id @default(uuid())
+  endpoint   String
+  method     String
+  statusCode Int
+  latencyMs  Int
+  aliadoId   String
+  aliado     Aliado   @relation(fields: [aliadoId], references: [id])
+  appId      String
+  app        App      @relation(fields: [appId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model ApiSpec {
+  id          String   @id @default(uuid())
+  name        String
+  domain      String
+  version     String
+  path        String
+  method      String
+  summary     String
+  description String?
+  specJson    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
