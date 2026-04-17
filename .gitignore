@@ -28,3 +28,6 @@ Thumbs.db
 
 # Docker volumes
 pgdata/
+
+# Other projects in workspace
+squad-agentes-ia/
