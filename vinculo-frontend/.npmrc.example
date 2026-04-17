@@ -1,4 +1,10 @@
 # Seguros Bolívar UI Library — Private Registry
-# Copy this file to .npmrc and replace <YOUR_TOKEN> with your JFrog auth token
+# Copy this file to .npmrc and configure your JFrog auth token
+#
+# Option 1: Set environment variable (RECOMMENDED)
+#   export JFROG_AUTH_TOKEN="YOUR_TOKEN_HERE"  (add to ~/.zshrc or ~/.bashrc)
+#
+# Option 2: Replace ${JFROG_AUTH_TOKEN} with your actual token (NOT recommended for shared machines)
+
 @seguros-bolivar:registry=https://segurosbolivar.jfrog.io/artifactory/api/npm/seguros-bolivar-ui-lib-virtual/
-//segurosbolivar.jfrog.io/artifactory/api/npm/seguros-bolivar-ui-lib-virtual/:_authToken=<YOUR_TOKEN>
+//segurosbolivar.jfrog.io/artifactory/api/npm/seguros-bolivar-ui-lib-virtual/:_authToken=${JFROG_AUTH_TOKEN}

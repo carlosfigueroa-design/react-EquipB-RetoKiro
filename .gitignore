@@ -6,8 +6,8 @@ dist/
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # MCP config (contains tokens)
 .kiro/settings/mcp.json
@@ -18,6 +18,9 @@ vinculo-frontend/.npmrc
 # Logs
 *.log
 npm-debug.log*
+
+# Lock files (use npm install to regenerate)
+pnpm-lock.yaml
 
 # OS
 .DS_Store
