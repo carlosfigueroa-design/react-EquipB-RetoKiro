@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="https://carlospatinovelez19.github.io/prueba-agente-po/">
+  <title>Reportes | SQUAD-AGENTES-IA | Vicepresidencia Negocio y Tecnología</title>
+  <meta name="description" content="Índice de reportes del proyecto SQUAD-AGENTES-IA. Workspace agnóstico de pruebas E2E, auditoría y observabilidad.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="Asset/report-base.css">
+  <link rel="stylesheet" href="Asset/report-index.css">
+</head>
+<body>
+  <div class="container">
+    <a href="./index.html" class="nav-link">← Inicio</a>
+
+    <h1>Reportes del Proyecto</h1>
+    <p class="subtitle">SQUAD-AGENTES-IA · Vicepresidencia Negocio y Tecnología</p>
+
+    <div class="platform-filter" id="platform-filter" style="display: none;">
+      <label for="platform-select">Plataforma:</label>
+      <select id="platform-select" aria-label="Filtrar por plataforma">
+        <option value="">Cargando...</option>
+      </select>
+      <span class="platform-url" id="platform-url"></span>
+    </div>
+
+    <a href="./reporte-ejecutivo-valor-proyecto.html" class="card primary">
+      <h2>Reporte Ejecutivo | Valor Entregado</h2>
+      <p>Resumen del valor entregado en el proyecto.</p>
+    </a>
+
+    <a href="./analisis-ciclo-desarrollo.html" class="card">
+      <h2>Análisis Ciclo de Desarrollo | Reporte Gerencial</h2>
+      <p>Tiempo promedio por fase del ciclo (Backlog, Desarrollo, QA, UAT, PAP, Producción). 100 HUs cerradas (1 ene - 30 mar 2025). Tabla detallada con enlaces a Jira.</p>
+    </a>
+
+    <a href="./diagrams/agentes-mcps-cli-skills-actividades.html" class="card">
+      <h2>Agentes, MCPs, CLIs, Skills y actividades</h2>
+      <p>Vista en dos pantallas: inventario de agentes con integraciones (MCP, CLI, skills) y resumen de actividades del workspace. Fuente: docs/architecture/6-inventario-agentes.md.</p>
+    </a>
+  </div>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = 'squad-agentes-ia-platform';
+      const filterEl = document.getElementById('platform-filter');
+      const selectEl = document.getElementById('platform-select');
+      const urlEl = document.getElementById('platform-url');
+
+      function showPlatformUrl(platform) {
+        if (!platform?.urls?.app) return;
+        urlEl.textContent = platform.urls.app;
+        urlEl.title = platform.urls.app;
+      }
+
+      function renderFilter(platforms, defaultId) {
+        if (!platforms?.length) return;
+
+        filterEl.style.display = 'flex';
+        selectEl.innerHTML = '';
+
+        const saved = localStorage.getItem(STORAGE_KEY);
+        const selectedId = saved && platforms.some((p) => p.id === saved) ? saved : defaultId;
+
+        platforms.forEach((p) => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.name;
+          if (p.id === selectedId) opt.selected = true;
+          selectEl.appendChild(opt);
+        });
+
+        const current = platforms.find((p) => p.id === selectEl.value);
+        if (current) showPlatformUrl(current);
+
+        selectEl.addEventListener('change', function () {
+          const p = platforms.find((pl) => pl.id === this.value);
+          if (p) {
+            localStorage.setItem(STORAGE_KEY, p.id);
+            showPlatformUrl(p);
+          }
+        });
+      }
+
+      fetch('./data/platforms.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((config) => {
+          const platforms = config?.platforms || [];
+          const defaultId = config?.defaultPlatformId || platforms[0]?.id;
+          renderFilter(platforms, defaultId);
+        })
+        .catch(() => {
+          selectEl.innerHTML = '<option value="">Sin plataformas configuradas</option>';
+        });
+    })();
+  </script>
+</body>
+</html>

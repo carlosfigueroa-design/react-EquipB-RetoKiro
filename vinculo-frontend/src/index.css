@@ -1,0 +1,115 @@
+/* ═══════════════════════════════════════════════════════
+   VÍNCULO by Seguros Bolívar — Design System Integration
+   Theme: sb-ui-seguros-bolivar-light
+   ═══════════════════════════════════════════════════════ */
+@import '@seguros-bolivar/ui-bundle/dist/sb-ui-seguros-bolivar-light.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ─────────────────────────────────────────────── */
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: var(--sb-ui-color-grayscale-L300, #f5f5f5);
+  color: var(--sb-ui-color-grayscale-black, #1b1b1b);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Code blocks ──────────────────────────────────────── */
+.code-block {
+  background: var(--sb-ui-color-grayscale-D400, #282828);
+  color: var(--sb-ui-color-tertiary-L100, #4ee19a);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  border-radius: 12px;
+  padding: 20px;
+  overflow-x: auto;
+}
+.code-block pre { margin: 0; }
+
+/* ── Alert component (SB doesn't have one, we build it) ── */
+.vinculo-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.vinculo-alert--error {
+  background: var(--sb-ui-color-feedback-error-L400, #fbebec);
+  color: var(--sb-ui-color-feedback-error-D100, #c93241);
+  border: 1px solid var(--sb-ui-color-feedback-error-L200, #ee9aa2);
+}
+.vinculo-alert--success {
+  background: var(--sb-ui-color-feedback-success-L400, #e9f6ec);
+  color: var(--sb-ui-color-feedback-success-D100, #279941);
+  border: 1px solid var(--sb-ui-color-feedback-success-L200, #94d3a2);
+}
+.vinculo-alert--info {
+  background: var(--sb-ui-color-feedback-info-L400, #e5f2ff);
+  color: var(--sb-ui-color-feedback-info-D100, #0374e8);
+  border: 1px solid var(--sb-ui-color-feedback-info-L200, #80bfff);
+}
+.vinculo-alert--warning {
+  background: var(--sb-ui-color-feedback-warning-L400, #fff9e5);
+  color: var(--sb-ui-color-feedback-warning-D300, #e0b52e);
+  border: 1px solid var(--sb-ui-color-feedback-warning-L200, #ffe080);
+}
+
+/* ── Logo ──────────────────────────────────────────────── */
+/* Corporate logo is now an <img> component (BolivarLogo.tsx) */
+
+/* ── Stat card ────────────────────────────────────────── */
+.vinculo-stat {
+  text-align: center;
+}
+.vinculo-stat__value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--sb-ui-color-primary-D100, #038450);
+  line-height: 1.2;
+}
+.vinculo-stat__label {
+  font-size: 0.8125rem;
+  color: var(--sb-ui-color-grayscale-D100, #757575);
+  margin-top: 4px;
+}
+
+/* ── Progress bar ─────────────────────────────────────── */
+.vinculo-progress {
+  height: 6px;
+  background: var(--sb-ui-color-grayscale-L200, #e1e1e1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.vinculo-progress__bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+/* ── Accessibility ────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Smooth transitions on interactive cards ──────────── */
+.sb-ui-card--interactive {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.sb-ui-card--interactive:hover {
+  transform: translateY(-2px);
+}
