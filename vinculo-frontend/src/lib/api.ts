@@ -93,6 +93,46 @@ export const api = {
   // Analytics
   getAnalyticsOverview: () => request<any>('/v1/vinculo/analytics/overview'),
 
+  // Admin (RU-07)
+  adminDashboard: () => request<any>('/v1/vinculo/admin/dashboard'),
+  adminListAliados: (status?: string, type?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (type) params.set('type', type);
+    return request<any>(`/v1/vinculo/admin/aliados?${params}`);
+  },
+  adminApprove: (id: string) =>
+    request<any>(`/v1/vinculo/admin/aliados/${id}/approve`, { method: 'POST' }),
+  adminSuspend: (id: string, reason?: string) =>
+    request<any>(`/v1/vinculo/admin/aliados/${id}/suspend`, {
+      method: 'POST', body: JSON.stringify({ reason }),
+    }),
+  adminReactivate: (id: string) =>
+    request<any>(`/v1/vinculo/admin/aliados/${id}/reactivate`, { method: 'POST' }),
+  adminRevokeApp: (aliadoId: string, appId: string) =>
+    request<any>(`/v1/vinculo/admin/aliados/${aliadoId}/apps/${appId}/revoke`, { method: 'POST' }),
+
+  // Audit (RU-08)
+  getAuditLogs: (filters?: Record<string, string>) => {
+    const params = new URLSearchParams(filters);
+    return request<any>(`/v1/vinculo/audit/logs?${params}`);
+  },
+  getComplianceReport: () => request<any>('/v1/vinculo/audit/compliance'),
+
+  // Notifications (RU-06)
+  getNotifications: () => request<any>('/v1/vinculo/notifications'),
+  markNotificationRead: (id: string) =>
+    request<any>(`/v1/vinculo/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    request<any>('/v1/vinculo/notifications/read-all', { method: 'POST' }),
+
+  // Governance (RU-09)
+  getVersions: (apiName?: string) => {
+    const params = apiName ? `?apiName=${apiName}` : '';
+    return request<any>(`/v1/vinculo/governance/versions${params}`);
+  },
+  getVersionTimeline: () => request<any>('/v1/vinculo/governance/timeline'),
+
   // Health
   health: () => request<any>('/health'),
 };

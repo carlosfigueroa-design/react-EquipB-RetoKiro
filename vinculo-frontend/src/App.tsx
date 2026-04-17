@@ -10,6 +10,9 @@ import Sandbox from './pages/Sandbox';
 import Apps from './pages/Apps';
 import Analytics from './pages/Analytics';
 import Docs from './pages/Docs';
+import Admin from './pages/Admin';
+import Audit from './pages/Audit';
+import Governance from './pages/Governance';
 
 export default function App() {
   return (
@@ -25,6 +28,9 @@ export default function App() {
           <Route path="/apps" element={<Apps />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/docs" element={<Docs />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/audit" element={<Audit />} />
+          <Route path="/governance" element={<Governance />} />
         </Route>
       </Routes>
     </AuthProvider>

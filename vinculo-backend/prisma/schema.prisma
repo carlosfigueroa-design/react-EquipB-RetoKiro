@@ -7,6 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── Enums ────────────────────────────────────────────
+
 enum AliadoType {
   INTERMEDIARIO
   FINTECH
@@ -26,20 +28,55 @@ enum AppStatus {
   REVOKED
 }
 
+enum AuditAction {
+  ALIADO_REGISTERED
+  ALIADO_APPROVED
+  ALIADO_SUSPENDED
+  ALIADO_REACTIVATED
+  APP_CREATED
+  APP_REVOKED
+  API_CALL
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  SECRET_ROTATED
+  API_VERSION_PUBLISHED
+  API_VERSION_DEPRECATED
+}
+
+enum NotificationType {
+  API_NEW_VERSION
+  API_DEPRECATION
+  API_SUNSET
+  MAINTENANCE_WINDOW
+  QUOTA_WARNING
+  SYSTEM_ALERT
+}
+
+enum ApiVersionStatus {
+  ACTIVE
+  DEPRECATED
+  SUNSET
+}
+
+// ── Core Models ──────────────────────────────────────
+
 model Aliado {
-  id            String       @id @default(uuid())
-  email         String       @unique
+  id            String         @id @default(uuid())
+  email         String         @unique
   passwordHash  String
   companyName   String
-  nit           String       @unique
+  nit           String         @unique
   type          AliadoType
-  status        AliadoStatus @default(PENDING)
+  status        AliadoStatus   @default(PENDING)
   contactName   String
   contactPhone  String
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  isAdmin       Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   apps          App[]
   apiCalls      ApiCall[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
 }
 
 model App {
@@ -57,17 +94,74 @@ model App {
 }
 
 model ApiCall {
-  id         String   @id @default(uuid())
-  endpoint   String
-  method     String
-  statusCode Int
-  latencyMs  Int
-  aliadoId   String
-  aliado     Aliado   @relation(fields: [aliadoId], references: [id])
-  appId      String
-  app        App      @relation(fields: [appId], references: [id])
-  createdAt  DateTime @default(now())
+  id            String   @id @default(uuid())
+  endpoint      String
+  method        String
+  statusCode    Int
+  latencyMs     Int
+  correlationId String   @default(uuid())
+  aliadoId      String
+  aliado        Aliado   @relation(fields: [aliadoId], references: [id])
+  appId         String
+  app           App      @relation(fields: [appId], references: [id])
+  createdAt     DateTime @default(now())
 }
+
+// ── RU-08: Audit & Compliance ────────────────────────
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  action     AuditAction
+  entityType String
+  entityId   String
+  detail     Json?
+  ipAddress  String?
+  userAgent  String?
+  aliadoId   String?
+  aliado     Aliado?     @relation(fields: [aliadoId], references: [id])
+  createdAt  DateTime    @default(now())
+
+  @@index([aliadoId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ── RU-06: Lifecycle Notifications ───────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  aliadoId  String?
+  aliado    Aliado?          @relation(fields: [aliadoId], references: [id])
+  global    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([aliadoId])
+  @@index([global])
+}
+
+// ── RU-09: API Version Governance ────────────────────
+
+model ApiVersion {
+  id             String           @id @default(uuid())
+  apiName        String
+  version        String
+  status         ApiVersionStatus @default(ACTIVE)
+  changelog      String?
+  publishedAt    DateTime         @default(now())
+  deprecatedAt   DateTime?
+  sunsetAt       DateTime?
+  sunsetNotice   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([apiName, version])
+}
+
+// ── Catalog ──────────────────────────────────────────
 
 model ApiSpec {
   id          String   @id @default(uuid())

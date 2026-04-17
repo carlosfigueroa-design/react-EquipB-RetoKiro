@@ -9,6 +9,8 @@ const NAV_ITEMS = [
   { path: '/apps', label: 'Apps', icon: 'fa-solid fa-key' },
   { path: '/analytics', label: 'Analytics', icon: 'fa-solid fa-chart-column' },
   { path: '/docs', label: 'Docs', icon: 'fa-solid fa-file-lines' },
+  { path: '/admin', label: 'Admin', icon: 'fa-solid fa-shield-halved' },
+  { path: '/governance', label: 'Versiones', icon: 'fa-solid fa-code-branch' },
 ];
 
 export default function Layout() {
