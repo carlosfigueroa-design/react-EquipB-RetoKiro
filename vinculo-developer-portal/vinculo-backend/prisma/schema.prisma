@@ -1,0 +1,286 @@
+// ─── VÍNCULO Developer Portal — Prisma Schema ───────────
+// Esquema completo con todos los modelos y enums del portal
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────
+
+enum UserRole {
+  PUBLICO
+  EXTERNO
+  LIDER_TECNICO
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  INACTIVE
+}
+
+enum ApiLifecycleState {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+  SUNSET
+}
+
+enum ApiProduct {
+  VIDA
+  AUTO
+  HOGAR
+  SALUD
+  OPEN_FINANCE
+  IDENTITY_SECURITY
+}
+
+enum ApiProcess {
+  COTIZACION
+  EMISION
+  POLIZA
+  RENOVACION
+  SINIESTRO
+  VALIDACION
+  BRIDGE
+  SCORING
+  PAGOS
+  AUTH
+  KYC
+}
+
+enum AuditAction {
+  USER_CREATED
+  USER_ROLE_CHANGED
+  USER_STATUS_CHANGED
+  API_CREATED
+  API_UPDATED
+  API_PUBLISHED
+  API_DEPRECATED
+  API_SUNSET
+  API_REACTIVATED
+  API_SPEC_UPLOADED
+  API_DOCS_GENERATED
+  SANDBOX_EXECUTED
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+}
+
+enum NotificationType {
+  API_DEPRECATED
+  API_SUNSET
+  QUOTA_WARNING
+  SYSTEM_ANNOUNCEMENT
+  WELCOME
+}
+
+enum MigrationWindow {
+  DAYS_30
+  DAYS_60
+  DAYS_90
+}
+
+// ─── Modelos ─────────────────────────────────────────────
+
+model User {
+  id          String     @id @default(uuid())
+  email       String     @unique
+  name        String?
+  company     String?
+  role        UserRole   @default(EXTERNO)
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relaciones
+  refreshTokens   RefreshToken[]
+  sandboxSessions SandboxSession[]
+  searchHistory   SearchHistory[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]       @relation("AuditUser")
+  apiConsumptions ApiConsumption[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Api {
+  id              String            @id @default(uuid())
+  name            String
+  slug            String            @unique
+  description     String
+  descriptionEn   String?           @map("description_en")
+  product         ApiProduct
+  process         ApiProcess
+  currentVersion  String            @default("1.0.0")
+  lifecycleState  ApiLifecycleState @default(DRAFT)
+  deprecatedAt    DateTime?
+  sunsetAt        DateTime?
+  migrationWindow MigrationWindow?
+  slaUptime       Float?            @default(99.9)
+  specOpenApi     Json?             @map("spec_openapi")
+  testCases       Json?             @map("test_cases")
+  sandboxConfig   Json?             @map("sandbox_config")
+  codeSnippets    Json?             @map("code_snippets")
+  contactName     String?           @map("contact_name")
+  contactEmail    String?           @map("contact_email")
+  contactSlack    String?           @map("contact_slack")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relaciones
+  versions        ApiVersion[]
+  sandboxSessions SandboxSession[]
+  consumptions    ApiConsumption[]
+
+  @@index([product])
+  @@index([process])
+  @@index([lifecycleState])
+  @@index([slug])
+  @@map("apis")
+}
+
+model ApiVersion {
+  id             String            @id @default(uuid())
+  apiId          String
+  version        String
+  versionUrl     String            @map("version_url")
+  lifecycleState ApiLifecycleState @default(ACTIVE)
+  specOpenApi    Json?             @map("spec_openapi")
+  changelog      String?
+  publishedAt    DateTime          @default(now())
+  deprecatedAt   DateTime?
+  sunsetAt       DateTime?
+  createdAt      DateTime          @default(now())
+
+  api Api @relation(fields: [apiId], references: [id], onDelete: Cascade)
+
+  @@unique([apiId, version])
+  @@index([apiId])
+  @@index([lifecycleState])
+  @@map("api_versions")
+}
+
+model ApiConsumption {
+  id        String   @id @default(uuid())
+  userId    String
+  apiId     String
+  callCount Int      @default(0)
+  quota     Int      @default(1000)
+  period    String   @default("monthly")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  api  Api  @relation(fields: [apiId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, apiId])
+  @@index([userId])
+  @@index([apiId])
+  @@map("api_consumptions")
+}
+
+model SandboxSession {
+  id             String   @id @default(uuid())
+  userId         String?
+  apiId          String
+  endpoint       String
+  method         String
+  requestBody    Json?    @map("request_body")
+  requestHeaders Json?    @map("request_headers")
+  responseBody   Json?    @map("response_body")
+  responseStatus Int      @map("response_status")
+  traceId        String   @unique @map("trace_id")
+  latencyMs      Int      @map("latency_ms")
+  isDemo         Boolean  @default(false) @map("is_demo")
+  createdAt      DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  api  Api   @relation(fields: [apiId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([apiId])
+  @@index([traceId])
+  @@index([createdAt])
+  @@map("sandbox_sessions")
+}
+
+model SearchHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  query       String
+  filters     Json?
+  resultCount Int      @default(0) @map("result_count")
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("search_history")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  metadata  Json?
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String
+  action     AuditAction
+  resource   String
+  resourceId String?     @map("resource_id")
+  metadata   Json?
+  ipAddress  String      @map("ip_address")
+  userAgent  String?     @map("user_agent")
+  createdAt  DateTime    @default(now())
+
+  user User @relation("AuditUser", fields: [userId], references: [id])
+
+  // NO updatedAt — registro inmutable
+  // Trigger PostgreSQL previene UPDATE y DELETE
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

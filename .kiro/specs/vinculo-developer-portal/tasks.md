@@ -1,0 +1,609 @@
+# Plan de Implementación: VÍNCULO Developer Portal
+
+## Visión General
+
+Plan de implementación incremental para el portal de desarrolladores VÍNCULO de Seguros Bolívar. Cada tarea construye sobre las anteriores, comenzando por la infraestructura base (Docker + Prisma), pasando por los módulos backend de NestJS, y finalizando con las 10 pantallas del frontend React 18 + TypeScript y los tests E2E. Todas las tareas de código usan TypeScript.
+
+## Tareas
+
+- [x] 1. Configurar estructura del proyecto, Docker Compose y esquema Prisma
+  - [x] 1.1 Crear `docker-compose.yml` con servicios: vinculo-frontend (Vite 5), vinculo-backend (NestJS), postgresql (15), redis (7), kong (gateway), mailhog (SMTP de desarrollo)
+    - Configurar volúmenes, redes, healthchecks y variables de entorno
+    - Exponer puertos: frontend (5173), backend (3000), PostgreSQL (5432), Redis (6379), Kong (8000/8443), MailHog (1025/8025)
+    - _Requerimientos: Todos (infraestructura base)_
+  - [x] 1.2 Inicializar proyecto `vinculo-backend` con NestJS CLI
+    - Crear estructura de carpetas por módulo: auth, apis, sandbox, ai, search, observability, governance, audit, users, notifications
+    - Configurar `tsconfig.json`, `eslint`, `prettier` y `jest` con soporte para fast-check
+    - Instalar dependencias: `@nestjs/core`, `@prisma/client`, `prisma`, `ioredis`, `nodemailer`, `jsonwebtoken`, `class-validator`, `class-transformer`, `fast-check`, `@nestjs/swagger`
+    - _Requerimientos: Todos (estructura backend)_
+  - [x] 1.3 Crear esquema Prisma completo con todos los modelos y enums
+    - Definir enums: `UserRole`, `UserStatus`, `ApiLifecycleState`, `ApiProduct`, `ApiProcess`, `AuditAction`, `NotificationType`, `MigrationWindow`
+    - Definir modelos: `User`, `RefreshToken`, `Api`, `ApiVersion`, `ApiConsumption`, `SandboxSession`, `SearchHistory`, `Notification`, `AuditLog`
+    - Configurar relaciones, índices y mapeos de tablas según el diseño
+    - _Requerimientos: 2.1, 2.7, 6.1, 8.3, 11.1, 13.1, 14.1_
+  - [x] 1.4 Crear migración SQL con trigger de inmutabilidad para `audit_logs`
+    - Implementar función `prevent_audit_log_modification()` que lanza excepción en UPDATE/DELETE
+    - Crear triggers `audit_log_immutable_update` y `audit_log_immutable_delete`
+    - _Requerimientos: 14.4_
+  - [x] 1.5 Crear seed de datos iniciales
+    - Insertar usuario ADMIN por defecto, APIs de ejemplo por línea de producto (Vida, Auto, Hogar, Salud) con especificaciones OpenAPI de muestra
+    - Mínimo 3 APIs por producto según requerimiento 1.2
+    - _Requerimientos: 1.2_
+  - [x] 1.6 Configurar módulos globales `PrismaModule` y `RedisModule`
+    - Crear `PrismaService` con `@Global()` y manejo de conexión/desconexión
+    - Crear `RedisService` con `@Global()` usando `ioredis` con configuración desde variables de entorno
+    - _Requerimientos: Todos (infraestructura de datos)_
+
+- [x] 2. Implementar módulo Auth: OTP + JWT RS256 + RBAC Guards
+  - [x] 2.1 Implementar `AuthService` con flujo de OTP
+    - Método `requestOtp(email)`: generar OTP de 6 dígitos, almacenar en Redis con clave `otp:{email}` y TTL 300s, verificar bloqueo en `otp:blocked:{email}`, enviar email vía Nodemailer
+    - Método `verifyOtp(email, otp)`: validar intentos < 3 contra Redis, verificar OTP, eliminar OTP tras uso exitoso (uso único), bloquear 15 min tras 3 intentos fallidos (`otp:blocked:{email}` TTL 900s)
+    - Auto-registro: si el email no existe en BD, crear usuario con rol EXTERNO
+    - _Requerimientos: 2.1, 2.2, 2.3, 2.4, 2.7, 2.8_
+  - [x] 2.2 Implementar generación y validación de JWT RS256
+    - Generar par de claves RSA para firma RS256
+    - Método para emitir JWT con claims: `sub`, `email`, `role`, `exp` (8h desde emisión)
+    - Implementar refresh token rotativo: generar token único, almacenar hash en BD (`RefreshToken`), invalidar anterior al rotar
+    - Método `refreshToken()`: validar refresh token, emitir nuevo par JWT + refresh token
+    - Método `logout()`: invalidar todos los refresh tokens del usuario
+    - _Requerimientos: 2.5, 2.6, 2.8_
+  - [x] 2.3 Implementar `AuthController` con endpoints REST
+    - `POST /auth/request-otp`: recibir `{email}`, validar con `class-validator`, invocar `requestOtp`
+    - `POST /auth/verify-otp`: recibir `{email, otp}`, validar formato 6 dígitos, invocar `verifyOtp`
+    - `POST /auth/refresh`: recibir `{refreshToken}`, invocar `refreshToken`
+    - `POST /auth/logout`: invalidar sesión, requiere `JwtAuthGuard`
+    - `GET /auth/me`: retornar perfil del usuario actual, requiere `JwtAuthGuard`
+    - _Requerimientos: 2.1, 2.2, 2.5_
+  - [x] 2.4 Implementar `JwtAuthGuard` y `RolesGuard` con decorador `@Roles()`
+    - `JwtAuthGuard`: extraer JWT del header `Authorization: Bearer`, verificar firma RS256, validar expiración, inyectar usuario en request
+    - `RolesGuard`: leer metadata `@Roles()` del endpoint, comparar con rol del usuario autenticado, denegar acceso si no coincide
+    - Implementar decorador `@Public()` para endpoints sin autenticación
+    - _Requerimientos: 11.1, 11.4, 11.5_
+  - [x] 2.5 Configurar `MailerModule` con Nodemailer
+    - Configurar transporte SMTP apuntando a MailHog en desarrollo
+    - Crear template de email para OTP con branding VÍNCULO (colores #1A3C0E, #2E7D32)
+    - _Requerimientos: 2.2_
+  - [x] 2.6 Escribir test de propiedad para formato de OTP
+    - **Propiedad 4: Formato de OTP** — Para todo OTP generado, verificar que es cadena de exactamente 6 dígitos numéricos (000000-999999)
+    - **Valida: Requerimiento 2.2**
+  - [x] 2.7 Escribir test de propiedad para ciclo de vida del OTP
+    - **Propiedad 5: Ciclo de Vida del OTP** — Verificar expiración tras 5 minutos y uso único (segundo intento de verificación falla)
+    - **Valida: Requerimientos 2.3, 2.8**
+  - [x] 2.8 Escribir test de propiedad para bloqueo por intentos fallidos
+    - **Propiedad 6: Bloqueo por Intentos Fallidos** — Para toda secuencia de 3 OTPs incorrectos consecutivos, verificar bloqueo de 15 minutos
+    - **Valida: Requerimiento 2.4**
+  - [x] 2.9 Escribir test de propiedad para JWT
+    - **Propiedad 7: Propiedades del Token JWT** — Para toda autenticación exitosa, verificar firma RS256, claim `exp` a 8h, y refresh token único
+    - **Valida: Requerimiento 2.5**
+  - [x] 2.10 Escribir test de propiedad para auto-registro
+    - **Propiedad 8: Auto-Registro con Rol por Defecto** — Para todo email nuevo, verificar creación de usuario con rol EXTERNO
+    - **Valida: Requerimiento 2.7**
+  - [x] 2.11 Escribir test de propiedad para matriz RBAC
+    - **Propiedad 3: Matriz de Autorización RBAC** — Para todo par (rol, endpoint), verificar que el acceso se concede si y solo si el rol está en la lista permitida
+    - **Valida: Requerimientos 11.1, 11.4, 11.5**
+  - [x] 2.12 Escribir tests unitarios para AuthService y AuthController
+    - Test flujo completo de registro con email nuevo
+    - Test login con email existente
+    - Test refresco silencioso de token
+    - Test logout e invalidación de refresh tokens
+    - Test errores: email inválido, OTP expirado, cuenta bloqueada
+    - _Requerimientos: 2.1–2.8_
+
+- [x] 3. Checkpoint — Verificar infraestructura y autenticación
+  - Ejecutar `docker-compose up` y verificar que todos los servicios inician correctamente
+  - Ejecutar migraciones Prisma y seed de datos
+  - Ejecutar todos los tests del módulo Auth
+  - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas
+
+- [x] 4. Implementar módulo APIs: CRUD + Versionamiento + OpenAPI Parser/Printer
+  - [x] 4.1 Implementar `OpenApiParserService` con métodos `parse`, `print`, `validate` y `roundTrip`
+    - `parse(spec)`: parsear especificación OpenAPI 3.1 (YAML/JSON) en objeto estructurado, validar contra esquema, retornar errores descriptivos con ubicación del problema
+    - `print(specObject)`: serializar objeto de especificación a formato OpenAPI 3.1 válido (YAML o JSON)
+    - `validate(spec)`: validar especificación sin parsear completamente, retornar lista de errores con línea y columna
+    - `roundTrip(spec)`: verificar que `parse(print(parse(spec))) === parse(spec)`
+    - _Requerimientos: 7.1, 7.2, 7.3, 7.4_
+  - [x] 4.2 Escribir test de propiedad para round-trip OpenAPI
+    - **Propiedad 1: Round-Trip de Especificaciones OpenAPI** — Para toda spec OpenAPI 3.1 válida, `print(parse(print(specObject))) === print(specObject)`
+    - Generador `validOpenApiSpecArb`: genera specs con paths, schemas y responses aleatorios
+    - **Valida: Requerimientos 7.1, 7.3, 7.4**
+  - [x] 4.3 Escribir test de propiedad para reporte de errores del parser
+    - **Propiedad 2: Reporte de Errores del Parser** — Para toda spec inválida, el parser retorna error descriptivo y nunca un objeto válido
+    - Generador `invalidOpenApiSpecArb`: genera specs con campos faltantes, tipos incorrectos
+    - **Valida: Requerimiento 7.2**
+  - [x] 4.4 Implementar `ApisService` con CRUD completo
+    - `findAll(filters)`: búsqueda con filtros por producto, proceso, versión, estado. Paginación cursor-based. Caché en Redis `api:catalog` (TTL 300s)
+    - `findById(id)`: detalle completo con especificación OpenAPI, versiones y métricas. Caché en Redis `api:detail:{apiId}` (TTL 600s)
+    - `create(dto)`: crear API en estado DRAFT, registrar en audit log
+    - `update(id, dto)`: actualizar API, invalidar caché
+    - `uploadSpec(id, file)`: parsear especificación OpenAPI 3.1 con `OpenApiParserService`, validar, almacenar en campo `specOpenApi`
+    - _Requerimientos: 3.1, 3.2, 3.3, 3.6, 6.1, 7.1_
+  - [x] 4.5 Implementar `ApisController` con endpoints REST
+    - `GET /apis`: listar APIs con filtros (público: básico, EXTERNO+: completo)
+    - `GET /apis/:id`: detalle de API
+    - `POST /apis`: crear nueva API (solo ADMIN)
+    - `PATCH /apis/:id`: actualizar API (ADMIN, LIDER_TECNICO)
+    - `GET /apis/:id/versions`: listar versiones (EXTERNO+)
+    - `POST /apis/:id/versions`: crear nueva versión con URL versionada `/v1/`, `/v2/` (solo ADMIN)
+    - `POST /apis/:id/upload-spec`: subir especificación OpenAPI (solo ADMIN)
+    - `POST /apis/:id/generate-docs`: generar docs con IA (solo ADMIN)
+    - _Requerimientos: 3.1, 3.2, 3.3, 6.1, 6.5, 13.2_
+  - [x] 4.6 Implementar generador de snippets de código
+    - Generar snippets funcionales en JavaScript, Python, Java y cURL para cada endpoint
+    - Cada snippet debe contener URL correcta del endpoint, método HTTP y headers requeridos
+    - _Requerimientos: 3.5_
+  - [x] 4.7 Escribir test de propiedad para generación de snippets
+    - **Propiedad 19: Generación de Snippets de Código** — Para todo endpoint con spec OpenAPI válida, generar snippets en 4 lenguajes con URL, método HTTP y headers correctos
+    - **Valida: Requerimiento 3.5**
+  - [x] 4.8 Escribir tests unitarios para ApisService
+    - Test CRUD completo de APIs
+    - Test upload de especificación OpenAPI válida e inválida
+    - Test versionamiento con URLs versionadas
+    - Test invalidación de caché Redis
+    - _Requerimientos: 3.1–3.6, 7.1–7.4, 13.2_
+
+- [x] 5. Implementar módulo Governance: máquina de estados del ciclo de vida
+  - [x] 5.1 Implementar `GovernanceService` con máquina de estados
+    - `validateTransition(currentState, targetState)`: validar transiciones permitidas (DRAFT→ACTIVE, ACTIVE→DEPRECATED, DEPRECATED→SUNSET, DEPRECATED→ACTIVE), rechazar cualquier otra con error descriptivo
+    - `publish(apiId)`: transición DRAFT → ACTIVE, registrar en audit log
+    - `deprecate(apiId, dto)`: transición ACTIVE → DEPRECATED, configurar ventana de migración (30/60/90 días), calcular fecha de sunset = fecha deprecación + ventana, notificar aliados consumidores
+    - `sunset(apiId)`: transición DEPRECATED → SUNSET, desactivar API del catálogo, notificar aliados
+    - `reactivate(apiId)`: transición DEPRECATED → ACTIVE (solo antes de fecha sunset), registrar en audit log
+    - _Requerimientos: 8.1, 8.2, 8.3, 8.5, 13.1, 13.5_
+  - [x] 5.2 Implementar `GovernanceController` con endpoints REST
+    - `POST /governance/apis/:id/publish`: publicar API (ADMIN)
+    - `POST /governance/apis/:id/deprecate`: deprecar API con `{migrationWindow}` (ADMIN)
+    - `POST /governance/apis/:id/sunset`: sunset de API (ADMIN)
+    - `POST /governance/apis/:id/reactivate`: reactivar API deprecada (ADMIN)
+    - `GET /governance/apis/:id/timeline`: timeline de cambios (LIDER_TECNICO, ADMIN)
+    - `GET /governance/status`: panel de estado global con versión, estado y SLA por API (LIDER_TECNICO, ADMIN)
+    - _Requerimientos: 13.1, 13.2, 13.3, 13.4_
+  - [x] 5.3 Escribir test de propiedad para máquina de estados
+    - **Propiedad 12: Máquina de Estados del Ciclo de Vida** — Para todo par (estado actual, estado objetivo), aceptar solo transiciones válidas y rechazar las demás
+    - **Valida: Requerimiento 13.1**
+  - [x] 5.4 Escribir test de propiedad para cobertura de notificación por deprecación
+    - **Propiedad 13: Cobertura de Notificación** — Para toda API con N consumidores activos, al deprecar se crean exactamente N notificaciones de tipo API_DEPRECATED
+    - **Valida: Requerimiento 8.2**
+  - [x] 5.5 Escribir test de propiedad para cálculo de ventana de migración
+    - **Propiedad 14: Cálculo de Ventana de Migración** — Para toda fecha D y ventana W ∈ {30, 60, 90}, la fecha de sunset = D + W días calendario
+    - **Valida: Requerimiento 8.3**
+  - [x] 5.6 Escribir test de propiedad para accesibilidad de APIs deprecadas
+    - **Propiedad 15: Accesibilidad de APIs Deprecadas** — Para toda API DEPRECATED con sunset futuro, la API sigue apareciendo en consultas del catálogo y el sandbox funciona
+    - **Valida: Requerimiento 8.5**
+  - [x] 5.7 Escribir tests unitarios para GovernanceService
+    - Test publicación DRAFT → ACTIVE
+    - Test deprecación con ventana de migración
+    - Test sunset y desactivación del catálogo
+    - Test reactivación de API deprecada
+    - Test transiciones inválidas (error descriptivo)
+    - _Requerimientos: 8.1–8.5, 13.1–13.5_
+
+- [x] 6. Implementar módulo Audit: log inmutable
+  - [x] 6.1 Implementar `AuditService` con registro inmutable
+    - `log(entry)`: crear registro en PostgreSQL con campos: `userId`, `action` (enum `AuditAction`), `resource`, `resourceId`, `metadata` (JSON), `ipAddress`, `userAgent`, `createdAt`
+    - `findAll(filters)`: consulta con filtros por usuario, tipo de acción, recurso, rango de fechas. Paginación cursor-based
+    - `generateComplianceReport(dateRange)`: generar reporte de cumplimiento SFC/Habeas Data/GDPR
+    - Retención mínima de 1 año
+    - _Requerimientos: 6.6, 8.4, 11.3, 13.3, 14.1, 14.2, 14.3_
+  - [x] 6.2 Implementar `AuditController` con endpoints REST
+    - `GET /audit/logs`: consultar logs con filtros (solo ADMIN)
+    - `GET /audit/logs/:id`: detalle de log (solo ADMIN)
+    - `GET /audit/compliance`: reporte de cumplimiento (solo ADMIN)
+    - _Requerimientos: 14.1, 14.3_
+  - [x] 6.3 Crear interceptor `AuditInterceptor` para registro automático de acciones administrativas
+    - Interceptar acciones de publicación, deprecación, sunset, cambio de rol, subida de spec
+    - Extraer `userId`, `ipAddress`, `userAgent` del request
+    - Invocar `AuditService.log()` automáticamente
+    - _Requerimientos: 6.6, 8.4, 11.3, 13.3, 14.1_
+  - [x] 6.4 Escribir test de propiedad para completitud de logs de auditoría
+    - **Propiedad 9: Completitud y Creación de Logs** — Para toda acción administrativa, verificar que el registro contiene userId, acción, recurso, resourceId, timestamp e IP
+    - **Valida: Requerimientos 6.6, 8.4, 11.3, 13.3, 14.1**
+  - [x] 6.5 Escribir test de propiedad para inmutabilidad del log
+    - **Propiedad 10: Inmutabilidad del Log** — Para todo registro existente, verificar que UPDATE y DELETE son rechazados por la BD
+    - **Valida: Requerimiento 14.4**
+  - [x] 6.6 Escribir test de propiedad para correctitud de filtros
+    - **Propiedad 11: Correctitud de Filtros del Log** — Para toda combinación de filtros, todos los registros retornados cumplen con cada filtro simultáneamente
+    - **Valida: Requerimiento 14.3**
+  - [x] 6.7 Escribir tests unitarios para AuditService
+    - Test creación de registro de auditoría con todos los campos
+    - Test consulta con filtros combinados
+    - Test verificación de inmutabilidad (UPDATE/DELETE rechazados)
+    - Test reporte de cumplimiento
+    - _Requerimientos: 14.1–14.4_
+
+- [x] 7. Checkpoint — Verificar módulos core del backend
+  - Ejecutar todos los tests de los módulos Auth, APIs, Governance y Audit
+  - Verificar que las transiciones de ciclo de vida registran en audit log
+  - Verificar que el trigger de inmutabilidad funciona contra PostgreSQL real
+  - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas
+
+- [x] 8. Implementar módulo Sandbox: motor de ejecución mock
+  - [x] 8.1 Implementar `MockEngineService` para generación de respuestas realistas
+    - `generateResponse(apiId, endpoint, body)`: generar respuestas realistas de seguros (cotizaciones, pólizas, siniestros) con datos mock contextuales colombianos
+    - `simulateError(scenario)`: simular circuit breaker, timeouts y errores HTTP (400, 401, 403, 404, 500, 503, 504)
+    - Datos mock diferenciados: genéricos para modo demo (PUBLICO), personalizados por aliado para modo autenticado
+    - _Requerimientos: 4.1, 4.2, 4.3, 4.4, 4.6_
+  - [x] 8.2 Implementar `SandboxService` con registro de sesiones
+    - `execute(dto, userId?)`: ejecutar llamada mock con trace ID único, registrar request/response completo en `SandboxSession`, simular latencia realista
+    - `getHistory(userId, filters)`: historial paginado de ejecuciones del aliado
+    - Modo demo: sin autenticación, datos genéricos de solo lectura
+    - Modo autenticado: datos personalizados por aliado
+    - _Requerimientos: 4.1, 4.2, 4.3, 4.5, 4.6_
+  - [x] 8.3 Implementar `SandboxController` con endpoints REST
+    - `POST /sandbox/execute`: ejecutar llamada (PUBLICO: demo, EXTERNO+: completo)
+    - `GET /sandbox/history`: historial de ejecuciones (EXTERNO+)
+    - `GET /sandbox/history/:id`: detalle de ejecución con trace ID (EXTERNO+)
+    - `GET /sandbox/presets/:apiId`: presets de prueba por API (PUBLICO)
+    - _Requerimientos: 4.1–4.6_
+  - [x] 8.4 Escribir test de propiedad para registro de sesiones de sandbox
+    - **Propiedad 20: Registro de Sesiones de Sandbox** — Para toda ejecución, verificar persistencia de request body, response body, trace ID único, latencia en ms, y referencia a API/endpoint
+    - **Valida: Requerimiento 4.5**
+  - [x] 8.5 Escribir tests unitarios para SandboxService y MockEngineService
+    - Test ejecución en modo demo (sin auth)
+    - Test ejecución autenticada con datos personalizados
+    - Test simulación de escenarios de error (circuit breaker, timeout)
+    - Test historial de ejecuciones
+    - _Requerimientos: 4.1–4.6_
+
+- [x] 9. Implementar módulo Search: búsqueda full-text y semántica
+  - [x] 9.1 Implementar `SearchService` con búsqueda full-text en PostgreSQL
+    - `search(query, filters)`: búsqueda full-text con `ts_vector` + `ts_query` en PostgreSQL, filtros por producto, proceso, versión y estado, respuesta en < 500ms
+    - Caché de resultados en Redis `search:{queryHash}` (TTL 120s)
+    - `saveHistory(userId, query)`: guardar búsqueda en historial del usuario (`SearchHistory`)
+    - `getHistory(userId)`: retornar historial de búsquedas recientes
+    - `getSuggestions(query)`: autocompletado basado en nombres de APIs y términos frecuentes
+    - _Requerimientos: 1.4, 1.5, 3.1, 12.1, 12.2, 12.3, 12.5_
+  - [x] 9.2 Implementar `SearchController` con endpoints REST
+    - `GET /search`: búsqueda global con query y filtros (PUBLICO)
+    - `POST /search/semantic`: búsqueda semántica con IA (Autenticado)
+    - `GET /search/history`: historial de búsquedas (Autenticado)
+    - `GET /search/suggestions`: sugerencias de autocompletado (PUBLICO)
+    - _Requerimientos: 12.1–12.5_
+  - [x] 9.3 Escribir test de propiedad para relevancia de búsqueda
+    - **Propiedad 16: Relevancia de Búsqueda** — Para toda API y todo substring de su nombre, al buscar por ese substring la API aparece en los resultados
+    - **Valida: Requerimientos 1.5, 12.1**
+  - [x] 9.4 Escribir test de propiedad para correctitud de filtros del catálogo
+    - **Propiedad 17: Correctitud de Filtros del Catálogo** — Para toda combinación de filtros, todos los resultados cumplen con cada filtro y ningún resultado que no cumpla es incluido
+    - **Valida: Requerimientos 3.1, 12.3**
+  - [x] 9.5 Escribir test de propiedad para persistencia del historial de búsqueda
+    - **Propiedad 18: Persistencia del Historial** — Para todo usuario autenticado que ejecuta una búsqueda, la consulta aparece en su historial con texto exacto y timestamp
+    - **Valida: Requerimiento 12.5**
+  - [x] 9.6 Escribir tests unitarios para SearchService
+    - Test búsqueda por nombre exacto y parcial
+    - Test búsqueda con filtros combinados
+    - Test historial de búsquedas
+    - Test autocompletado
+    - Test caché Redis de resultados
+    - _Requerimientos: 12.1–12.5_
+
+- [x] 10. Implementar módulo AI: generación de documentación + asistente + motor mock
+  - [x] 10.1 Implementar `AIService` con integración a Claude claude-sonnet-4-20250514
+    - `generateDocs(requestBody)`: invocar Claude con prompt estructurado para generar especificación OpenAPI 3.1 completa, nombre, descripción, tipo de proceso, casos de prueba (happy path + 3 escenarios de error), configuración de sandbox y snippets de código. Completar en < 3 minutos
+    - `askAssistant(query, context)`: pipeline RAG — embedding de consulta → búsqueda en documentación → prompt con contexto de pantalla/API actual → respuesta de Claude. Respuesta en < 3s (p95)
+    - `askAssistantPublic(query)`: versión pública del asistente para preguntas generales sobre APIs disponibles
+    - `suggestApis(businessNeed)`: interpretar necesidad de negocio y retornar APIs relevantes del catálogo
+    - `generateSnippet(apiId, endpoint, language)`: generar snippet funcional en JS, Python, Java o cURL
+    - _Requerimientos: 6.1, 6.2, 6.3, 6.4, 9.1, 9.2, 9.3, 9.5, 1.7, 3.7_
+  - [x] 10.2 Implementar `AIController` con endpoints REST
+    - `POST /ai/generate-docs`: generar documentación desde JSON (ADMIN)
+    - `POST /ai/assistant`: consulta al asistente contextual (Autenticado)
+    - `POST /ai/assistant/public`: consulta pública al asistente (PUBLICO)
+    - `POST /ai/suggest-apis`: sugerir APIs por caso de uso (Autenticado)
+    - `POST /ai/generate-snippet`: generar snippet de código (Autenticado)
+    - _Requerimientos: 6.1, 9.1–9.5_
+  - [x] 10.3 Implementar integración del motor mock con IA para respuestas realistas de seguros
+    - Conectar `MockEngineService` con Claude para generar respuestas contextuales de seguros colombianos
+    - Generar datos mock de cotizaciones, pólizas, siniestros con cédulas, NIT y datos realistas
+    - _Requerimientos: 4.2, 4.3_
+  - [x] 10.4 Escribir tests unitarios para AIService (con mock de Claude API)
+    - Test generación de documentación OpenAPI desde JSON
+    - Test asistente contextual con respuesta en contexto de pantalla
+    - Test sugerencia de APIs por necesidad de negocio
+    - Test generación de snippets en 4 lenguajes
+    - Test modo público del asistente
+    - _Requerimientos: 6.1–6.5, 9.1–9.5_
+
+- [x] 11. Implementar módulo Observability: métricas, alertas y exportación
+  - [x] 11.1 Implementar `ObservabilityService` con métricas y alertas
+    - Métricas en tiempo real: número de llamadas, latencia y tasa de errores por API
+    - Cálculo de percentiles de latencia (p50, p95, p99) por API
+    - Alerta automática cuando un aliado alcanza 80% de su cuota asignada (tipo `QUOTA_WARNING`)
+    - Trazabilidad distribuida: seguir solicitud de extremo a extremo mediante trace ID
+    - Exportación CSV de datos de consumo por aliado
+    - _Requerimientos: 10.1, 10.2, 10.3, 10.4, 10.5_
+  - [x] 11.2 Implementar `ObservabilityController` con endpoints REST
+    - `GET /observability/metrics`: métricas generales (LIDER_TECNICO, ADMIN)
+    - `GET /observability/metrics/:apiId`: métricas por API (LIDER_TECNICO, ADMIN)
+    - `GET /observability/latency/:apiId`: percentiles de latencia (LIDER_TECNICO, ADMIN)
+    - `GET /observability/alerts`: alertas activas (LIDER_TECNICO, ADMIN)
+    - `POST /observability/export`: exportar CSV (LIDER_TECNICO, ADMIN)
+    - `GET /observability/traces/:traceId`: detalle de trace (LIDER_TECNICO, ADMIN)
+    - _Requerimientos: 10.1–10.5_
+  - [x] 11.3 Escribir test de propiedad para alerta de umbral de cuota
+    - **Propiedad 21: Alerta de Umbral de Cuota** — Para todo aliado con cuota Q y consumo C, cuando C ≥ 0.8 × Q se genera alerta QUOTA_WARNING, cuando C < 0.8 × Q no se genera
+    - **Valida: Requerimiento 10.3**
+  - [x] 11.4 Escribir test de propiedad para cálculo de percentiles de latencia
+    - **Propiedad 22: Cálculo de Percentiles** — Para todo conjunto de latencias, p50/p95/p99 se calculan correctamente según fórmula estándar de percentiles
+    - **Valida: Requerimiento 10.2**
+  - [x] 11.5 Escribir tests unitarios para ObservabilityService
+    - Test métricas en tiempo real por API
+    - Test cálculo de percentiles
+    - Test generación de alertas de cuota
+    - Test exportación CSV
+    - Test trazabilidad por trace ID
+    - _Requerimientos: 10.1–10.5_
+
+- [x] 12. Implementar módulo Users: gestión RBAC
+  - [x] 12.1 Implementar `UsersService` con gestión de usuarios y roles
+    - `findAll(filters)`: listar usuarios con rol, estado y fecha de último acceso
+    - `findById(id)`: detalle de usuario
+    - `changeRole(id, newRole, adminId)`: cambiar rol de usuario, registrar en audit log con identificador del administrador, usuario afectado y timestamp
+    - `changeStatus(id, newStatus, adminId)`: activar/desactivar usuario, registrar en audit log
+    - _Requerimientos: 11.1, 11.2, 11.3_
+  - [x] 12.2 Implementar `UsersController` con endpoints REST
+    - `GET /users`: listar usuarios (ADMIN)
+    - `GET /users/:id`: detalle de usuario (ADMIN)
+    - `PATCH /users/:id/role`: cambiar rol (ADMIN)
+    - `PATCH /users/:id/status`: activar/desactivar (ADMIN)
+    - _Requerimientos: 11.1–11.5_
+  - [x] 12.3 Escribir tests unitarios para UsersService
+    - Test listar usuarios con filtros
+    - Test cambio de rol con registro en audit log
+    - Test cambio de estado
+    - Test restricciones RBAC
+    - _Requerimientos: 11.1–11.5_
+
+- [x] 13. Implementar módulo Notifications
+  - [x] 13.1 Implementar `NotificationsService` con notificaciones email + in-app
+    - `create(notification)`: crear notificación en BD (tipo: API_DEPRECATED, API_SUNSET, QUOTA_WARNING, SYSTEM_ANNOUNCEMENT, WELCOME)
+    - `findByUser(userId)`: listar notificaciones del usuario
+    - `markAsRead(id)`: marcar notificación como leída
+    - `markAllAsRead(userId)`: marcar todas como leídas
+    - `sendEmail(userId, notification)`: enviar notificación por email vía Nodemailer
+    - _Requerimientos: 8.2, 10.3, 13.5_
+  - [x] 13.2 Implementar `NotificationsController` con endpoints REST
+    - `GET /notifications`: listar notificaciones del usuario (Autenticado)
+    - `PATCH /notifications/:id/read`: marcar como leída (Autenticado)
+    - `PATCH /notifications/read-all`: marcar todas como leídas (Autenticado)
+    - _Requerimientos: 8.2, 13.5_
+  - [x] 13.3 Escribir tests unitarios para NotificationsService
+    - Test creación de notificaciones por tipo
+    - Test marcar como leída
+    - Test envío de email
+    - _Requerimientos: 8.2, 10.3, 13.5_
+
+- [x] 14. Checkpoint — Verificar todos los módulos backend
+  - Ejecutar todos los tests de todos los módulos backend
+  - Verificar integración entre módulos: Governance → Audit, Governance → Notifications, APIs → Search
+  - Verificar que la documentación Swagger se genera correctamente en `/api/docs`
+  - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas
+
+- [x] 15. Inicializar proyecto frontend y configurar layout base
+  - [x] 15.1 Inicializar proyecto `vinculo-frontend` con Vite 5 + React 18 + TypeScript
+    - Instalar dependencias: `react-router-dom`, `zustand`, `@tanstack/react-query`, `axios`, `tailwindcss`, `swagger-ui-react`, `redoc`
+    - Configurar TailwindCSS v3 con colores de marca: Primary #1A3C0E, Secondary #2E7D32, Accent #76C442, Gold #F9A825, Background #F5F7F2
+    - Configurar fuentes: Sora 800 (display), Plus Jakarta Sans (body), JetBrains Mono (code)
+    - Configurar Vitest + Testing Library para tests de componentes
+    - _Requerimientos: 1.1, 1.8_
+  - [x] 15.2 Implementar layout principal con navegación y routing
+    - Configurar React Router v6 con todas las rutas según tabla del diseño: `/`, `/auth`, `/catalog`, `/catalog/:apiId`, `/sandbox/:apiId`, `/production/:apiId`, `/admin`, `/admin/users`, `/observability`, `/governance`
+    - Implementar layout con header (logo VÍNCULO, navegación, botón "Registrarse / Iniciar sesión"), sidebar para zona admin, y footer
+    - Implementar guards de ruta por rol: rutas públicas, rutas EXTERNO+, rutas LIDER_TECNICO+, rutas ADMIN
+    - Diseño responsive: móvil, tableta y escritorio
+    - _Requerimientos: 1.1, 1.6, 1.8, 11.1, 11.4, 11.5_
+  - [x] 15.3 Configurar stores de Zustand y React Query
+    - `authStore`: usuario, token, rol, métodos de login/logout/refresh
+    - `apiStore`: APIs, filtros, búsqueda
+    - `sandboxStore`: sesión, historial
+    - `uiStore`: tema, sidebar, modal
+    - Configurar React Query con interceptor Axios para JWT (header `Authorization: Bearer`) y refresco silencioso de token
+    - _Requerimientos: 2.5, 2.6_
+
+- [x] 16. Implementar página Landing (zona pública)
+  - [x] 16.1 Crear página Landing con hero section y propuesta de valor
+    - Hero section con título, descripción del ecosistema OpenX y CTA "Registrarse / Iniciar sesión"
+    - Sección de APIs destacadas por línea de producto (Vida, Auto, Hogar, Salud) con nombre y descripción básica
+    - Sección de beneficios del portal (autoservicio, sandbox, documentación IA)
+    - Buscador global visible y funcional en la zona pública
+    - LCP < 2 segundos (optimizar imágenes, lazy loading)
+    - Cumplimiento WCAG 2.1 nivel AA: contraste, navegación por teclado, aria-labels
+    - _Requerimientos: 1.1, 1.2, 1.4, 1.6, 1.8_
+  - [x] 16.2 Escribir tests de componente para Landing
+    - Test renderizado de APIs por producto
+    - Test visibilidad del buscador global
+    - Test accesibilidad (axe-core)
+    - _Requerimientos: 1.1, 1.2, 1.4, 1.8_
+
+- [x] 17. Implementar páginas de autenticación (Email + OTP)
+  - [x] 17.1 Crear página Auth con flujo Email → OTP
+    - Formulario de email con validación
+    - Pantalla de ingreso de OTP (6 dígitos) con countdown de 5 minutos
+    - Manejo de estados: enviando OTP, verificando, error (OTP inválido, cuenta bloqueada), éxito
+    - Mensaje de reenvío de OTP
+    - Redirección post-login según rol del usuario
+    - Integración con `authStore` para almacenar JWT y datos de usuario
+    - _Requerimientos: 2.1, 2.2, 2.3, 2.4, 2.5_
+  - [x] 17.2 Escribir tests de componente para Auth
+    - Test flujo completo de registro
+    - Test manejo de errores (OTP inválido, cuenta bloqueada)
+    - Test countdown de expiración
+    - _Requerimientos: 2.1–2.8_
+
+- [x] 18. Implementar página Catálogo de APIs
+  - [x] 18.1 Crear página Catálogo con listado, filtros y búsqueda
+    - Grid/lista de APIs con nombre, descripción, producto, proceso, estado y versión
+    - Filtros laterales por producto (Vida, Auto, Hogar, Salud, Open Finance, Identity Security), proceso, versión y estado
+    - Buscador integrado con autocompletado y búsqueda en < 500ms
+    - Badge "DEPRECATED" visible en APIs deprecadas
+    - Paginación o scroll infinito
+    - Vista pública (lectura) y vista autenticada (interacción completa)
+    - _Requerimientos: 1.2, 1.4, 1.5, 3.1, 3.2, 8.1, 12.1, 12.2, 12.3_
+  - [x] 18.2 Escribir tests de componente para Catálogo
+    - Test renderizado de APIs con filtros
+    - Test búsqueda con resultados
+    - Test badge DEPRECATED
+    - _Requerimientos: 3.1, 8.1, 12.1–12.3_
+
+- [x] 19. Implementar página Detalle de API (tabs: descripción, docs, test cases, sandbox)
+  - [x] 19.1 Crear página Detalle de API con sistema de tabs
+    - Tab Descripción: descripción en español e inglés técnico, contacto de TI (nombre, email, Slack), estado, versión, SLA
+    - Tab Documentación: renderizado OpenAPI 3.1 con Swagger UI React, endpoints, parámetros, esquemas, ejemplos de request/response, códigos de respuesta (200, 201, 400, 401, 403, 404, 422, 500)
+    - Tab Casos de Prueba: happy path y escenarios de error generados por IA
+    - Tab Sandbox: interfaz "Try-It" integrada con selector de endpoint, editor JSON de request body y panel de respuesta
+    - Snippets de código en JavaScript, Python, Java y cURL para cada endpoint
+    - Banner "DEPRECATED" visible si la API está deprecada
+    - _Requerimientos: 3.2, 3.3, 3.4, 3.5, 3.6, 3.8, 5.2, 8.1_
+  - [x] 19.2 Escribir tests de componente para Detalle de API
+    - Test renderizado de tabs
+    - Test renderizado de Swagger UI
+    - Test snippets de código
+    - Test banner DEPRECATED
+    - _Requerimientos: 3.2–3.8, 8.1_
+
+- [x] 20. Implementar página Sandbox interactivo
+  - [x] 20.1 Crear página Sandbox con interfaz completa de ejecución
+    - Selector de endpoint con método HTTP
+    - Editor JSON de request body con syntax highlighting (JetBrains Mono)
+    - Panel de respuesta con syntax highlighting, status code, headers y latencia
+    - Historial de ejecuciones con trace ID para depuración
+    - Modo demo para visitantes públicos (datos genéricos de solo lectura)
+    - Modo completo para aliados autenticados (datos personalizados)
+    - Selector de escenarios de error (circuit breaker, timeout, errores HTTP)
+    - _Requerimientos: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
+  - [x] 20.2 Escribir tests de componente para Sandbox
+    - Test ejecución de llamada y visualización de respuesta
+    - Test modo demo vs modo autenticado
+    - Test historial de ejecuciones
+    - _Requerimientos: 4.1–4.6_
+
+- [x] 21. Implementar página Proceso de Paso a Producción
+  - [x] 21.1 Crear página de proceso de producción con stepper visual
+    - Componente stepper con pasos numerados del proceso de paso a producción
+    - Información de contacto de TI responsable (nombre, email, canal Slack)
+    - Botón de descarga del Checklist de Seguridad (PDF)
+    - Tiempo estimado de aprobación por API
+    - _Requerimientos: 5.1, 5.2, 5.3, 5.4_
+  - [x] 21.2 Escribir tests de componente para Proceso de Producción
+    - Test renderizado del stepper
+    - Test información de contacto
+    - Test descarga de PDF
+    - _Requerimientos: 5.1–5.4_
+
+- [x] 22. Checkpoint — Verificar páginas públicas y de aliado
+  - Verificar flujo completo: Landing → Auth → Catálogo → Detalle → Sandbox → Producción
+  - Verificar responsive en móvil, tableta y escritorio
+  - Verificar accesibilidad WCAG 2.1 AA
+  - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas
+
+- [x] 23. Implementar Panel de Administración (gestión de APIs + usuarios)
+  - [x] 23.1 Crear panel Admin con gestión de APIs
+    - Tabla de APIs con nombre, producto, proceso, estado, versión y acciones
+    - Formulario de creación de API: subir JSON de request body → vista previa de documentación generada por IA → edición → publicación
+    - Formulario de subida de especificación OpenAPI
+    - Acciones de gobernanza: publicar, deprecar (con selector de ventana de migración 30/60/90 días), sunset, reactivar
+    - Panel de estado con versión, estado y SLA de cada API
+    - _Requerimientos: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 8.1, 8.3, 13.1, 13.2, 13.4_
+  - [x] 23.2 Crear panel Admin con gestión de usuarios
+    - Tabla de usuarios con email, rol, estado y fecha de último acceso
+    - Acciones: cambiar rol (PUBLICO, EXTERNO, LIDER_TECNICO, ADMIN), activar/desactivar usuario
+    - Confirmación antes de cambios de rol con registro en audit log
+    - _Requerimientos: 11.1, 11.2, 11.3_
+  - [x] 23.3 Escribir tests de componente para Panel Admin
+    - Test tabla de APIs con acciones
+    - Test formulario de creación con vista previa IA
+    - Test tabla de usuarios con cambio de rol
+    - _Requerimientos: 6.1–6.6, 11.1–11.5_
+
+- [x] 24. Implementar Dashboard de Observabilidad
+  - [x] 24.1 Crear dashboard de métricas en tiempo real
+    - Gráficos de número de llamadas, latencia y tasa de errores por API
+    - Tabla de percentiles de latencia (p50, p95, p99) por API
+    - Panel de alertas activas (cuota al 80%, errores elevados)
+    - Trazabilidad distribuida: buscar por trace ID y ver flujo completo de la solicitud
+    - Botón de exportación CSV de datos de consumo por aliado
+    - Acceso restringido a LIDER_TECNICO y ADMIN
+    - _Requerimientos: 10.1, 10.2, 10.3, 10.4, 10.5_
+  - [x] 24.2 Escribir tests de componente para Dashboard de Observabilidad
+    - Test renderizado de gráficos de métricas
+    - Test tabla de percentiles
+    - Test panel de alertas
+    - Test exportación CSV
+    - _Requerimientos: 10.1–10.5_
+
+- [x] 25. Implementar Asistente de IA (chatbot flotante)
+  - [x] 25.1 Crear componente flotante del asistente de IA
+    - Botón flotante visible en todas las pantallas del portal
+    - Panel de chat con historial de conversación
+    - Contexto automático: detectar pantalla y API actual para respuestas contextuales
+    - Modo público: responder preguntas generales sobre APIs disponibles
+    - Modo autenticado: respuestas contextuales, sugerencia de APIs por necesidad de negocio, generación de snippets en lenguaje preferido, explicación de errores de integración
+    - Indicador de carga con respuesta en < 3 segundos (p95)
+    - _Requerimientos: 1.7, 9.1, 9.2, 9.3, 9.4, 9.5_
+  - [x] 25.2 Escribir tests de componente para Asistente IA
+    - Test renderizado del chatbot flotante
+    - Test envío de mensaje y respuesta
+    - Test detección de contexto de pantalla
+    - _Requerimientos: 9.1–9.5_
+
+- [x] 26. Implementar panel de Gobernanza / Ciclo de Vida
+  - [x] 26.1 Crear panel de gobernanza con timeline y estado de APIs
+    - Vista de todas las APIs con su estado actual en el ciclo de vida (DRAFT, ACTIVE, DEPRECATED, SUNSET)
+    - Timeline visual de cambios por API (publicación, deprecación, sunset, reactivación)
+    - Indicadores de ventana de migración activa con countdown
+    - Filtros por estado, producto y proceso
+    - Acceso restringido a LIDER_TECNICO y ADMIN
+    - _Requerimientos: 13.1, 13.2, 13.3, 13.4, 13.5_
+  - [x] 26.2 Escribir tests de componente para panel de Gobernanza
+    - Test renderizado de estados del ciclo de vida
+    - Test timeline de cambios
+    - Test filtros
+    - _Requerimientos: 13.1–13.5_
+
+- [x] 27. Checkpoint — Verificar todas las pantallas del frontend
+  - Verificar panel de administración completo (APIs + usuarios)
+  - Verificar dashboard de observabilidad con datos reales del backend
+  - Verificar asistente IA en todas las pantallas
+  - Verificar panel de gobernanza con transiciones de estado
+  - Verificar restricciones de acceso por rol en todas las rutas
+  - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas
+
+- [x] 28. Implementar tests E2E con Playwright
+  - [x] 28.1 Configurar Playwright con proyecto vinculo-frontend y vinculo-backend
+    - Configurar `playwright.config.ts` con baseURL, timeouts y screenshots en fallo
+    - Configurar setup global para levantar servicios Docker antes de los tests
+    - _Requerimientos: Todos (validación E2E)_
+  - [x] 28.2 Implementar test E2E: Golden Path
+    - Flujo: Visitante → Landing → Registro email → OTP → Login → Catálogo → Buscar API → Detalle → Sandbox → Primera llamada API exitosa
+    - Verificar que el flujo completo se realiza en menos de 5 minutos
+    - _Requerimientos: 1.1, 1.2, 2.1, 2.2, 2.5, 3.1, 3.3, 4.1, 4.2_
+  - [x] 28.3 Implementar test E2E: Flujo Admin
+    - Flujo: Login Admin → Subir JSON de API → Generar docs con IA → Vista previa → Editar → Publicar → Verificar en catálogo
+    - _Requerimientos: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
+  - [x] 28.4 Implementar test E2E: Deprecación
+    - Flujo: Login Admin → Seleccionar API activa → Deprecar con ventana 30 días → Verificar banner DEPRECATED → Verificar notificaciones a aliados → Verificar API sigue accesible
+    - _Requerimientos: 8.1, 8.2, 8.3, 8.5_
+  - [x] 28.5 Implementar test E2E: Búsqueda
+    - Flujo: Landing → Buscar API por nombre → Filtrar por producto → Ver detalle → Probar en sandbox
+    - _Requerimientos: 1.4, 1.5, 3.1, 12.1, 12.2, 12.3_
+  - [x] 28.6 Implementar test E2E: Observabilidad
+    - Flujo: Login Líder Técnico → Dashboard → Ver métricas por API → Ver percentiles → Exportar CSV
+    - _Requerimientos: 10.1, 10.2, 10.5_
+
+- [x] 29. Checkpoint final — Verificar sistema completo
+  - Ejecutar todos los tests unitarios del backend (Jest + fast-check)
+  - Ejecutar todos los tests de componentes del frontend (Vitest + Testing Library)
+  - Ejecutar todos los tests de componentes del frontend (Vitest + Testing Library)
+  - Ejecutar todos los tests E2E (Playwright)
+  - Verificar que `docker-compose up` levanta todo el sistema correctamente
+  - Verificar cobertura de código > 80%
+  - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas
+
+## Notas
+
+- Las tareas marcadas con `*` son opcionales y pueden omitirse para un MVP más rápido
+- Cada tarea referencia requerimientos específicos para trazabilidad
+- Los checkpoints aseguran validación incremental del sistema
+- Los tests de propiedad (PBT) validan las 22 propiedades de correctitud universales del diseño usando fast-check
+- Los tests unitarios validan escenarios específicos y edge cases
+- Todo el código usa TypeScript tanto en backend (NestJS) como en frontend (React 18)
+- La identidad visual usa los colores de marca: Primary #1A3C0E, Secondary #2E7D32, Accent #76C442, Gold #F9A825, Background #F5F7F2
+- Las fuentes son: Sora 800 (display), Plus Jakarta Sans (body), JetBrains Mono (code)

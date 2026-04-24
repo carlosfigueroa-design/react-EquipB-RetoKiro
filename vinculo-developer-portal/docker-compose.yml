@@ -1,0 +1,198 @@
+version: "3.9"
+
+# ─── VÍNCULO Developer Portal — Docker Compose ───────────
+# Servicios: frontend (Vite 5), backend (NestJS), PostgreSQL 15,
+#            Redis 7, Kong Gateway, MailHog (SMTP dev)
+# ──────────────────────────────────────────────────────────
+
+services:
+  # ─── PostgreSQL 15 ────────────────────────────────────────
+  postgresql:
+    image: postgres:15-alpine
+    container_name: vinculo-postgresql
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vinculo
+      POSTGRES_PASSWORD: vinculo_dev_2026
+      POSTGRES_DB: vinculo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - vinculo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vinculo -d vinculo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─── Redis 7 ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: vinculo-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - vinculo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ─── MailHog — SMTP de desarrollo ─────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: vinculo-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks:
+      - vinculo-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8025"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ─── Kong Gateway ─────────────────────────────────────────
+  kong:
+    image: kong:3.6
+    container_name: vinculo-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_LOG_LEVEL: info
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+    ports:
+      - "8000:8000"   # Proxy HTTP
+      - "8443:8443"   # Proxy HTTPS
+      - "8001:8001"   # Admin API (dev only)
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    networks:
+      - vinculo-network
+    depends_on:
+      vinculo-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ─── Backend — NestJS ─────────────────────────────────────
+  vinculo-backend:
+    build:
+      context: ./vinculo-backend
+      dockerfile: Dockerfile
+    container_name: vinculo-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      # PostgreSQL
+      DATABASE_URL: postgresql://vinculo:vinculo_dev_2026@postgresql:5432/vinculo?schema=public
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+      # JWT RS256
+      JWT_ALGORITHM: RS256
+      JWT_EXPIRATION: 8h
+      JWT_ISSUER: vinculo-developer-portal
+      # SMTP — MailHog
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_FROM: '"VÍNCULO Portal" <noreply@vinculo.segurosbolivar.com>'
+      # OTP
+      OTP_TTL_SECONDS: "300"
+      OTP_MAX_ATTEMPTS: "3"
+      OTP_BLOCK_DURATION_SECONDS: "900"
+      # Kong upstream
+      KONG_ADMIN_URL: http://kong:8001
+      # AI — Claude
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-placeholder-dev}
+      ANTHROPIC_MODEL: claude-sonnet-4-20250514
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./vinculo-backend:/app
+      - backend_node_modules:/app/node_modules
+    networks:
+      - vinculo-network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailhog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ─── Frontend — Vite 5 + React 18 ────────────────────────
+  vinculo-frontend:
+    build:
+      context: ./vinculo-frontend
+      dockerfile: Dockerfile
+    container_name: vinculo-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_APP_NAME: "VÍNCULO Developer Portal"
+      VITE_APP_ENV: development
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./vinculo-frontend:/app
+      - frontend_node_modules:/app/node_modules
+    networks:
+      - vinculo-network
+    depends_on:
+      vinculo-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:5173 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+# ─── Volumes ──────────────────────────────────────────────
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  backend_node_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+
+# ─── Networks ─────────────────────────────────────────────
+networks:
+  vinculo-network:
+    driver: bridge
+    name: vinculo-network

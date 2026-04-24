@@ -1,0 +1,64 @@
+_format_version: "3.0"
+_transform: true
+
+# ─── VÍNCULO Developer Portal — Kong Declarative Config ──
+# Configuración DB-less para desarrollo local
+# ──────────────────────────────────────────────────────────
+
+services:
+  # ─── Backend API ──────────────────────────────────────────
+  - name: vinculo-backend
+    url: http://vinculo-backend:3000
+    routes:
+      - name: vinculo-api
+        paths:
+          - /api
+        strip_path: false
+        preserve_host: true
+
+  # ─── Frontend ─────────────────────────────────────────────
+  - name: vinculo-frontend
+    url: http://vinculo-frontend:5173
+    routes:
+      - name: vinculo-web
+        paths:
+          - /
+        strip_path: false
+        preserve_host: true
+
+plugins:
+  # ─── CORS ─────────────────────────────────────────────────
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:5173"
+        - "http://localhost:8000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+      exposed_headers:
+        - X-Request-ID
+      credentials: true
+      max_age: 3600
+
+  # ─── Rate Limiting ───────────────────────────────────────
+  - name: rate-limiting
+    config:
+      minute: 120
+      policy: local
+
+  # ─── Request ID ──────────────────────────────────────────
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true

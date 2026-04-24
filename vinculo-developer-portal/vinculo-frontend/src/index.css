@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  body {
+    @apply bg-background font-body text-primary antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  code, pre {
+    @apply font-mono;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Focus ring for accessibility */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+@layer components {
+  /* Seguros Bolívar button styles */
+  .sb-btn-primary {
+    @apply bg-secondary hover:bg-gold hover:text-primary text-white font-bold px-6 py-3 rounded-full transition-all duration-200 shadow-md hover:shadow-lg;
+  }
+
+  .sb-btn-accent {
+    @apply bg-accent hover:bg-gold text-primary font-bold px-6 py-3 rounded-full transition-all duration-200 shadow-md hover:shadow-lg;
+  }
+
+  .sb-btn-outline {
+    @apply border-2 border-secondary text-secondary hover:bg-gold hover:border-gold hover:text-primary font-semibold px-6 py-3 rounded-full transition-all duration-200;
+  }
+
+  /* Card styles */
+  .sb-card {
+    @apply bg-white rounded-2xl shadow-sb border border-gray-100 overflow-hidden;
+  }
+
+  .sb-card-hover {
+    @apply sb-card hover:shadow-sb-lg hover:border-gold/40 transition-all duration-300;
+  }
+}
